@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aggilli · Canvas de agentes</title>
+<style>
+*{box-sizing:border-box} :root{color-scheme:dark;font:14px system-ui,sans-serif;color:#e9eef7;background:#10141d;--line:#293344;--muted:#9daac0;--mint:#78e4bc}body{margin:0;height:100dvh;display:grid;grid-template-rows:64px 1fr 34px}button,input,textarea{font:inherit}button{cursor:pointer;color:inherit;background:#1c2432;border:1px solid var(--line);border-radius:8px;padding:8px 12px}button:hover{border-color:var(--mint)}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--mint)}header,footer{display:flex;align-items:center;gap:14px;padding:0 20px;background:#151b26}header{border-bottom:1px solid var(--line)}header strong{font-size:20px;letter-spacing:-.5px}header small,footer,aside small,.hint{color:var(--muted)}.logo{color:var(--mint);font-size:24px}header .spacer{flex:1}.primary{background:var(--mint);color:#10221b;border:0;font-weight:700}main{position:relative;min-height:0;overflow:hidden}#canvas{position:absolute;inset:0;overflow:hidden;touch-action:none;background-image:radial-gradient(#364158 1px,transparent 1px);background-size:24px 24px;cursor:grab}#world{position:absolute;transform-origin:0 0;pointer-events:none}#edges{position:absolute;overflow:visible;pointer-events:none;width:1px;height:1px}#edges path.wire{pointer-events:stroke;cursor:pointer}#edges path.hit{stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer}.node{position:absolute;width:218px;height:122px;pointer-events:auto;background:#181f2d;border:1px solid #354158;border-radius:12px;box-shadow:0 12px 22px #0004;cursor:move;padding:15px;user-select:none}.node.active{border-color:var(--mint)}.node b{display:block;margin:8px 0 4px;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node small{color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badge{font-size:10px;letter-spacing:1px;color:#9baeff}.port{position:absolute;top:50%;transform:translateY(-50%);width:16px;height:16px;padding:0;border-radius:50%;background:#202a3c;border:2px solid #a4b5ff}.port.in{left:-8px}.port.out{right:-8px}.port.pending{background:var(--mint)}.overlay{position:absolute;left:16px;bottom:16px;display:flex;gap:6px;align-items:center}.overlay span{min-width:48px;text-align:center}.hint{position:absolute;left:16px;top:16px;background:#151b26;border:1px solid var(--line);padding:8px 12px;border-radius:8px;pointer-events:none;max-width:calc(100% - 32px)}aside{position:absolute;right:12px;top:56px;width:min(270px,calc(100% - 24px));background:#151b26;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 12px 22px #0004}aside h2{font-size:16px;margin:0 0 12px}aside label{display:block;margin:12px 0;color:var(--muted)}input,textarea{width:100%;margin-top:5px;padding:8px;border:1px solid var(--line);border-radius:6px;background:#10141d;color:#fff}textarea{resize:vertical;min-height:85px}.actions{display:flex;gap:6px;flex-wrap:wrap}.danger{color:#ffb3b3}footer{border-top:1px solid var(--line);justify-content:space-between;font-size:12px}[hidden]{display:none!important}@media(max-width:620px){header{padding:0 10px;gap:8px}header small{display:none}footer{padding:0 10px}}
+
+.node .badge[data-status="running"]{color:#f9d27f}.node .badge[data-status="done"]{color:var(--mint)}.node .badge[data-status="failed"]{color:#ff9d9d}aside{max-height:calc(100% - 72px);overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#10141d;border:1px solid var(--line);border-radius:6px;padding:8px;max-height:230px;overflow:auto;font-size:12px}dialog{width:min(480px,calc(100% - 24px));background:#151b26;color:inherit;border:1px solid var(--line);border-radius:12px;padding:20px}dialog::backdrop{background:#0009}dialog label{display:block;margin:12px 0;color:var(--muted)}dialog h2{margin:0}#runState{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}button:disabled{opacity:.5;cursor:default}
+</style>
+<header><span class="logo" aria-hidden="true">◈</span><strong>Aggilli</strong><small> / Canvas de agentes</small><span class="spacer"></span><button id="run">Executar</button><button id="connect">Conectar</button><button class="primary" id="add">+ Agente</button></header>
+<main>
+<div id="canvas" aria-label="Canvas de agentes">
+<div id="world">
+<svg id="edges" aria-label="Conexões"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8c9ee7"/></marker></defs><g id="wires"></g></svg>
+<div id="nodes"></div>
+</div></div>
+<div class="hint" id="hint" role="status">Arraste o fundo para navegar. Use a roda para ampliar.</div>
+<div class="overlay"><button id="minus" aria-label="Reduzir zoom">−</button><span id="zoom"></span><button id="plus" aria-label="Aumentar zoom">+</button><button id="fit">Enquadrar</button></div>
+<aside id="panel" hidden>
+<h2 id="panelTitle">Configurar agente</h2>
+<form id="edit"><label>Nome<input id="name" maxlength="60" required></label><label>Instruções<textarea id="instructions" maxlength="4000"></textarea></label>
+<label><input id="write" type="checkbox" style="width:auto"> Permitir editar o projeto</label><div class="actions"><button class="primary">Salvar</button><button type="button" id="remove" class="danger">Excluir</button><button type="button" id="close">Fechar</button></div></form>
+<div class="actions" id="edgeEdit" hidden><button id="removeEdge" class="danger">Excluir conexão</button><button id="closeEdge">Fechar</button></div>
+<section id="agentRun" hidden><h3 id="agentStatus"></h3>
+<details open><summary>Log do agente</summary><pre id="agentLog"></pre></details>
+<details><summary>Resposta do agente</summary><pre id="agentReport"></pre></details></section>
+</aside>
+<dialog id="runDialog"><form id="runForm"><h2>Executar fluxo</h2>
+<label>Pasta do projeto<input id="project" placeholder="/caminho/do/projeto" required></label>
+<label>Tarefa<textarea id="task" required maxlength="12000"></textarea></label>
+<p id="runError" class="danger" role="alert"></p>
+<div class="actions"><button class="primary" id="startRun">Iniciar</button><button type="button" id="cancelRun">Fechar</button></div>
+</form></dialog>
+</main>
+<footer><span id="count"></span><span id="runState" role="status"></span><span id="storage">Salvo neste navegador</span></footer>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('canvas');
+const apiToken = "";
+const statusNames = {queued:'Na fila',running:'Executando',done:'Concluído',failed:'Falhou',skipped:'Ignorado'};
+let execution = {status:'idle',steps:{}};
+let polling = false;
+function updateExecution() {
+  $('run').disabled = execution.status === 'running';
+  const labels = {running:'Fluxo em execução',done:'Fluxo concluído',failed:'Fluxo com falhas'};
+  $('runState').textContent = labels[execution.status] || '';
+  $('runState').title = execution.directory || '';
+  for (const badge of $('nodes').querySelectorAll('[data-agent]')) {
+    const status = execution.steps[badge.dataset.agent]?.status;
+    badge.dataset.status = status || '';
+    badge.textContent = status ? '◆ '+statusNames[status] : '◆ AGENTE';
+  }
+  const step = selected && execution.steps[selected];
+  $('agentRun').hidden = !step;
+  if (step) {
+    $('agentStatus').textContent = statusNames[step.status];
+    const log = step.log || 'Aguardando saída…';
+    const report = step.report || 'Aguardando resposta…';
+    if ($('agentLog').textContent !== log) $('agentLog').textContent = log;
+    if ($('agentReport').textContent !== report) $('agentReport').textContent = report;
+  }
+}
+async function api(path, body) {
+  const headers = {'X-Aggilli-Token':apiToken};
+  const options = {headers};
+  if (body) {
+    headers['Content-Type']='application/json';
+    Object.assign(options,{method:'POST',body:JSON.stringify(body)});
+  }
+  const response = await fetch(path,options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  return data;
+}
+async function refresh() {
+  if (polling) return;
+  polling = true;
+  try {execution=await api('/api/status');updateExecution();}
+  catch {$('runState').textContent='Servidor indisponível';}
+  finally {polling=false;}
+}
+const key = 'aggilli-canvas-v1';
+const defaultGraph = {
+  nodes: [
+    {id:'planner',name:'Planejador',instructions:'Planeje a tarefa com passos verificáveis.',x:40,y:120},
+    {id:'executor',write:true,name:'Executor',instructions:'Implemente a tarefa e valide as alterações.',x:340,y:120},
+    {id:'reviewer',name:'Revisor',instructions:'Revise a implementação e relate falhas.',x:640,y:120}
+  ],
+  edges:[{from:'planner',to:'executor'},{from:'executor',to:'reviewer'}]
+};
+let graph = defaultGraph;
+try {
+  const saved = JSON.parse(localStorage.getItem(key));
+  if (Array.isArray(saved?.nodes) && Array.isArray(saved?.edges)) graph = saved;
+} catch {}
+for (const node of graph.nodes) node.write ??= node.id === 'executor';
+let camera = {x:0,y:0,z:1};
+let selected = null, selectedEdge = null, connecting = false, source = null, drag = null;
+const find = id => graph.nodes.find(node => node.id === id);
+function save() {
+  try { localStorage.setItem(key, JSON.stringify(graph)); }
+  catch { $('storage').textContent = 'Armazenamento indisponível'; }
+}
+function paintCamera() {
+  const {x,y,z} = camera;
+  $('world').style.transform = 'translate('+x+'px,'+y+'px) scale('+z+')';
+  canvas.style.backgroundSize = 24*z+'px '+24*z+'px';
+  canvas.style.backgroundPosition = x+'px '+y+'px';
+  $('zoom').textContent = Math.round(z*100)+'%';
+}
+function zoomAt(factor,x,y) {
+  const z = Math.max(.2, Math.min(2.5,camera.z*factor));
+  const ratio = z/camera.z;
+  camera = {x:x-(x-camera.x)*ratio,y:y-(y-camera.y)*ratio,z};
+  paintCamera();
+}
+function fit() {
+  if (!graph.nodes.length) { camera={x:0,y:0,z:1}; paintCamera(); return; }
+  const left = Math.min(...graph.nodes.map(n=>n.x)), top = Math.min(...graph.nodes.map(n=>n.y));
+  const width = Math.max(...graph.nodes.map(n=>n.x+218))-left;
+  const height = Math.max(...graph.nodes.map(n=>n.y+122))-top;
+  const z = Math.max(.2,Math.min(1,(canvas.clientWidth-72)/width,(canvas.clientHeight-140)/height));
+  camera = {x:(canvas.clientWidth-width*z)/2-left*z,y:(canvas.clientHeight-height*z)/2-top*z,z};
+  paintCamera();
+}
+function hint(message) {
+  $('hint').textContent = message || (source ? 'Selecione o agente de destino.' :
+    connecting ? 'Selecione o agente de origem.' : 'Arraste o fundo para navegar. Use a roda para ampliar.');
+}
+function select(id,edge=null) {
+  selected=id; selectedEdge=edge;
+  $('panel').hidden=!id&&!edge;
+  $('edit').hidden=!id;
+  $('edgeEdit').hidden=!edge;
+  $('panelTitle').textContent=edge?'Conexão selecionada':'Configurar agente';
+  if (id) {
+    $('name').value=find(id).name;
+    $('instructions').value=find(id).instructions;
+    $('write').checked=find(id).write;
+  }
+  render();
+}
+function renderEdges() {
+  $('wires').replaceChildren();
+  graph.edges.forEach(edge=>{
+    const a=find(edge.from), b=find(edge.to);
+    if (!a||!b) return;
+    const x=a.x+218,y=a.y+61, ex=b.x-9,ey=b.y+61;
+    const curve=Math.max(42,Math.abs(ex-x)*.55);
+    const d='M '+x+' '+y+' C '+(x+curve)+' '+y+' '+(ex-curve)+' '+ey+' '+ex+' '+ey;
+    for (const hit of [false,true]) {
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d',d);
+      path.setAttribute('fill','none');
+      path.setAttribute('class',hit?'hit':'wire');
+      if (hit) {
+        path.setAttribute('tabindex','0');
+        path.setAttribute('role','button');
+        path.setAttribute('aria-label',a.name+' para '+b.name);
+        path.addEventListener('click',()=>select(null,edge));
+        path.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(null,edge);}});
+      } else {
+        path.setAttribute('stroke',edge===selectedEdge?'#78e4bc':'#8c9ee7');
+        path.setAttribute('stroke-width','2');
+        path.setAttribute('marker-end','url(#arrow)');
+      }
+      $('wires').append(path);
+    }
+  });
+}
+function choose(id) {
+  if (!source) { source=id; connecting=true; render(); hint(); return; }
+  if (source===id) { hint('Escolha outro agente como destino.'); return; }
+  if (graph.edges.some(e=>e.from===source&&e.to===id)) { hint('Essa conexão já existe. Escolha outro destino.'); return; }
+  graph.edges.push({from:source,to:id});
+  source=null;connecting=false;save();render();hint('Conexão criada.');
+}
+function render() {
+  $('nodes').replaceChildren();
+  for (const n of graph.nodes) {
+    const card=document.createElement('article');
+    card.className='node'+(selected===n.id?' active':'');
+    card.style.left=n.x+'px';card.style.top=n.y+'px';
+    card.tabIndex=0;
+    card.setAttribute('aria-label',n.name);
+    const badge=document.createElement('span');badge.className='badge';badge.dataset.agent=n.id;
+    const title=document.createElement('b');title.textContent=n.name;
+    const note=document.createElement('small');note.textContent=n.instructions||'Sem instruções';
+    card.append(badge,title,note);
+    for (const side of ['in','out']) {
+      const port=document.createElement('button');
+      port.className='port '+side+(side==='out'&&source===n.id?' pending':'');
+      port.setAttribute('aria-label',(side==='out'?'Conectar a partir de ':'Conectar a ')+n.name);
+      port.addEventListener('click',e=>{
+        e.stopPropagation();
+        if(side==='out'){source=n.id;connecting=true;render();hint();}
+        else if(source) choose(n.id);
+        else hint('Escolha primeiro a saída de um agente.');
+      });
+      card.append(port);
+    }
+    card.addEventListener('keydown',e=>{if(e.target===card&&e.key==='Enter') connecting?choose(n.id):select(n.id);});
+    card.addEventListener('pointerdown',e=>{
+      if(e.button!==0||e.target.closest('button')) return;
+      e.stopPropagation();
+      if(connecting){choose(n.id);return;}
+      begin(e,n,card);
+    });
+    $('nodes').append(card);
+  }
+  renderEdges();
+  $('count').textContent=graph.nodes.length+' agentes · '+graph.edges.length+' conexões';
+  $('connect').setAttribute('aria-pressed',String(connecting));
+  $('connect').textContent=connecting?'Cancelar conexão':'Conectar';
+  updateExecution();
+}
+function begin(e,node=null,card=null) {
+  drag={id:e.pointerId,px:e.clientX,py:e.clientY,node,card,x:node?node.x:camera.x,y:node?node.y:camera.y,moved:false};
+  canvas.setPointerCapture(e.pointerId);
+}
+canvas.addEventListener('pointerdown',e=>{if(e.button===0&&!e.target.closest('.node,.hit,.wire')) begin(e);});
+canvas.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.id) return;
+  const dx=e.clientX-drag.px, dy=e.clientY-drag.py;
+  if(!drag.moved && Math.hypot(dx,dy)<4) return;
+  drag.moved=true;
+  if(drag.node){
+    drag.node.x=drag.x+dx/camera.z;drag.node.y=drag.y+dy/camera.z;
+    drag.card.style.left=drag.node.x+'px';drag.card.style.top=drag.node.y+'px';renderEdges();
+  }else{camera.x=drag.x+dx;camera.y=drag.y+dy;paintCamera();}
+});
+function end(e) {
+  if(!drag||e.pointerId!==drag.id) return;
+  const {node,moved}=drag;drag=null;
+  if(moved){if(node) save();}
+  else if(e.type==='pointerup') select(node?.id||null);
+}
+canvas.addEventListener('pointerup',end);
+canvas.addEventListener('pointercancel',end);
+canvas.addEventListener('wheel',e=>{e.preventDefault();const rect=canvas.getBoundingClientRect();zoomAt(e.deltaY<0?1.12:1/1.12,e.clientX-rect.left,e.clientY-rect.top);},{passive:false});
+$('plus').onclick=()=>zoomAt(1.2,canvas.clientWidth/2,canvas.clientHeight/2);
+$('minus').onclick=()=>zoomAt(1/1.2,canvas.clientWidth/2,canvas.clientHeight/2);
+$('fit').onclick=fit;
+$('connect').onclick=()=>{connecting=!connecting;source=null;render();hint();};
+$('add').onclick=()=>{
+  const id=crypto.randomUUID();
+  const n={id,name:'Novo agente',instructions:'',x:(canvas.clientWidth/2-camera.x)/camera.z-109,y:(canvas.clientHeight/2-camera.y)/camera.z-61};
+  graph.nodes.push(n);save();select(id);$('name').select();
+};
+$('edit').onsubmit=e=>{
+  e.preventDefault();
+  const name=$('name').value.trim();
+  if(!name){$('name').focus();return;}
+  Object.assign(find(selected),{name,instructions:$('instructions').value.trim(),write:$('write').checked});
+  save();render();hint('Agente salvo.');
+};
+$('remove').onclick=()=>{
+  graph.nodes=graph.nodes.filter(n=>n.id!==selected);
+  graph.edges=graph.edges.filter(e=>e.from!==selected&&e.to!==selected);
+  if(source===selected){source=null;connecting=false;}
+  save();select(null);hint('Agente excluído.');
+};
+$('removeEdge').onclick=()=>{graph.edges=graph.edges.filter(e=>e!==selectedEdge);save();select(null);hint('Conexão excluída.');};
+$('close').onclick=$('closeEdge').onclick=()=>select(null);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){source=null;connecting=false;select(null);hint();}
+});
+$('run').onclick=()=>{
+  if (!apiToken) {hint('Para executar, inicie aggilli_web.py e abra o endereço local exibido.');return;}
+  $('runError').textContent='';
+  $('runDialog').showModal();
+};
+$('cancelRun').onclick=()=>$('runDialog').close();
+$('runForm').onsubmit=async e=>{
+  e.preventDefault();
+  $('startRun').disabled=true;
+  $('runError').textContent='';
+  try {
+    await api('/api/run',{task:$('task').value.trim(),project:$('project').value.trim(),nodes:graph.nodes,edges:graph.edges});
+    execution={status:'running',steps:Object.fromEntries(graph.nodes.map(node=>[node.id,{status:'queued'}]))};
+    updateExecution();
+    $('runDialog').close();
+    await refresh();
+  } catch (error) {$('runError').textContent=error.message;}
+  finally {$('startRun').disabled=false;}
+};
+render();fit();
+if (apiToken) {refresh();setInterval(refresh,900);}
+</script>
+</html>
