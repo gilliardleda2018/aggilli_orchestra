@@ -5,6 +5,7 @@ import argparse
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -82,6 +83,7 @@ class Runner:
                 json.dumps({**payload, "order": order}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            self.record_status(run)
             self.run = run
             Thread(target=self.execute, args=(run, nodes, parents, order, project, task),
                    daemon=True).start()
@@ -94,9 +96,11 @@ class Runner:
             if any(parent not in reports for parent in parents[key]):
                 with self.lock:
                     step["status"] = "skipped"
+                    self.record_status(run)
                 continue
             with self.lock:
                 step["status"] = "running"
+                self.record_status(run)
             node = nodes[key]
             sandbox = "workspace-write" if node.get("write") is True else "read-only"
             try:
@@ -116,8 +120,59 @@ class Runner:
                 reports[key] = response
             with self.lock:
                 step["status"] = "done" if success else "failed"
+                self.record_status(run)
         with self.lock:
             run["status"] = "done" if len(reports) == len(order) else "failed"
+            self.record_status(run)
+
+    def record_status(self, run):
+        directory = run["directory"]
+        data = {"status": run["status"], "steps": {
+            key: step["status"] for key, step in run["steps"].items()
+        }}
+        temporary = directory / "status.tmp"
+        temporary.write_text(json.dumps(data), encoding="utf-8")
+        temporary.replace(directory / "status.json")
+
+    def archive(self, run_id=None):
+        if run_id is None:
+            directories = sorted(self.history.glob("fluxo-*"),
+                                 key=lambda path: path.stat().st_mtime, reverse=True)
+        elif re.fullmatch(r"fluxo-[a-z0-9_]+", run_id):
+            directories = [self.history / run_id]
+        else:
+            raise ValueError("Identificador de execução inválido.")
+        entries = []
+        for directory in directories:
+            if directory.is_symlink():
+                continue
+            try:
+                metadata = json.loads((directory / "fluxo.json").read_text(encoding="utf-8"))
+                status_file = directory / "status.json"
+                state = json.loads(status_file.read_text(encoding="utf-8")) if status_file.exists() else {}
+            except (OSError, ValueError):
+                continue
+            status = state.get("status", "unknown")
+            if status == "running":
+                with self.lock:
+                    if not self.run or self.run["directory"] != directory:
+                        status = "interrupted"
+            entry = {"id": directory.name, "task": metadata["task"],
+                     "project": metadata["project"], "status": status,
+                     "created": (directory / "fluxo.json").stat().st_mtime}
+            if run_id:
+                names = {node["id"]: node["name"] for node in metadata["nodes"]}
+                entry["agents"] = [
+                    {"name": names[key], "status": state.get("steps", {}).get(key, "unknown"),
+                     "log": tail(directory / f"{index}.log"),
+                     "report": tail(directory / f"{index}.md")}
+                    for index, key in enumerate(metadata["order"], 1)
+                ]
+                return entry
+            entries.append(entry)
+            if len(entries) == 50:
+                break
+        return entries if run_id is None else None
 
     def snapshot(self):
         with self.lock:
@@ -171,6 +226,14 @@ def main():
                 self.send(200, html.encode("utf-8"), "text/html")
             elif self.path == "/api/status" and self.authorized():
                 self.reply(200, runner.snapshot())
+            elif self.path == "/api/history" and self.authorized():
+                self.reply(200, runner.archive())
+            elif self.path.startswith("/api/history/") and self.authorized():
+                try:
+                    entry = runner.archive(self.path.removeprefix("/api/history/"))
+                except ValueError:
+                    entry = None
+                self.reply(200, entry) if entry else self.reply(404, {"error": "Execução indisponível."})
             else:
                 self.reply(404, {"error": "Rota indisponível."})
 

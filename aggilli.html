@@ -7,8 +7,8 @@
 *{box-sizing:border-box} :root{color-scheme:dark;font:14px system-ui,sans-serif;color:#e9eef7;background:#10141d;--line:#293344;--muted:#9daac0;--mint:#78e4bc}body{margin:0;height:100dvh;display:grid;grid-template-rows:64px 1fr 34px}button,input,textarea{font:inherit}button{cursor:pointer;color:inherit;background:#1c2432;border:1px solid var(--line);border-radius:8px;padding:8px 12px}button:hover{border-color:var(--mint)}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--mint)}header,footer{display:flex;align-items:center;gap:14px;padding:0 20px;background:#151b26}header{border-bottom:1px solid var(--line)}header strong{font-size:20px;letter-spacing:-.5px}header small,footer,aside small,.hint{color:var(--muted)}.logo{color:var(--mint);font-size:24px}header .spacer{flex:1}.primary{background:var(--mint);color:#10221b;border:0;font-weight:700}main{position:relative;min-height:0;overflow:hidden}#canvas{position:absolute;inset:0;overflow:hidden;touch-action:none;background-image:radial-gradient(#364158 1px,transparent 1px);background-size:24px 24px;cursor:grab}#world{position:absolute;transform-origin:0 0;pointer-events:none}#edges{position:absolute;overflow:visible;pointer-events:none;width:1px;height:1px}#edges path.wire{pointer-events:stroke;cursor:pointer}#edges path.hit{stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer}.node{position:absolute;width:218px;height:122px;pointer-events:auto;background:#181f2d;border:1px solid #354158;border-radius:12px;box-shadow:0 12px 22px #0004;cursor:move;padding:15px;user-select:none}.node.active{border-color:var(--mint)}.node b{display:block;margin:8px 0 4px;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node small{color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badge{font-size:10px;letter-spacing:1px;color:#9baeff}.port{position:absolute;top:50%;transform:translateY(-50%);width:16px;height:16px;padding:0;border-radius:50%;background:#202a3c;border:2px solid #a4b5ff}.port.in{left:-8px}.port.out{right:-8px}.port.pending{background:var(--mint)}.overlay{position:absolute;left:16px;bottom:16px;display:flex;gap:6px;align-items:center}.overlay span{min-width:48px;text-align:center}.hint{position:absolute;left:16px;top:16px;background:#151b26;border:1px solid var(--line);padding:8px 12px;border-radius:8px;pointer-events:none;max-width:calc(100% - 32px)}aside{position:absolute;right:12px;top:56px;width:min(270px,calc(100% - 24px));background:#151b26;border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 12px 22px #0004}aside h2{font-size:16px;margin:0 0 12px}aside label{display:block;margin:12px 0;color:var(--muted)}input,textarea{width:100%;margin-top:5px;padding:8px;border:1px solid var(--line);border-radius:6px;background:#10141d;color:#fff}textarea{resize:vertical;min-height:85px}.actions{display:flex;gap:6px;flex-wrap:wrap}.danger{color:#ffb3b3}footer{border-top:1px solid var(--line);justify-content:space-between;font-size:12px}[hidden]{display:none!important}@media(max-width:620px){header{padding:0 10px;gap:8px}header small{display:none}footer{padding:0 10px}}
 
 .node .badge[data-status="running"]{color:#f9d27f}.node .badge[data-status="done"]{color:var(--mint)}.node .badge[data-status="failed"]{color:#ff9d9d}aside{max-height:calc(100% - 72px);overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#10141d;border:1px solid var(--line);border-radius:6px;padding:8px;max-height:230px;overflow:auto;font-size:12px}dialog{width:min(480px,calc(100% - 24px));background:#151b26;color:inherit;border:1px solid var(--line);border-radius:12px;padding:20px}dialog::backdrop{background:#0009}dialog label{display:block;margin:12px 0;color:var(--muted)}dialog h2{margin:0}#runState{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}button:disabled{opacity:.5;cursor:default}
-</style>
-<header><span class="logo" aria-hidden="true">◈</span><strong>Aggilli</strong><small> / Canvas de agentes</small><span class="spacer"></span><button id="run">Executar</button><button id="connect">Conectar</button><button class="primary" id="add">+ Agente</button></header>
+#historyDialog{max-height:85vh;overflow:auto}#historyBody{display:grid;gap:8px;margin:12px 0}#historyBody button{text-align:left;overflow-wrap:anywhere}#historyBody details{overflow-wrap:anywhere}</style>
+<header><span class="logo" aria-hidden="true">◈</span><strong>Aggilli</strong><small> / Canvas de agentes</small><span class="spacer"></span><button id="history" hidden>Histórico</button><button id="run">Executar</button><button id="connect">Conectar</button><button class="primary" id="add">+ Agente</button></header>
 <main>
 <div id="canvas" aria-label="Canvas de agentes">
 <div id="world">
@@ -26,6 +26,10 @@
 <details open><summary>Log do agente</summary><pre id="agentLog"></pre></details>
 <details><summary>Resposta do agente</summary><pre id="agentReport"></pre></details></section>
 </aside>
+<dialog id="historyDialog"><h2>Histórico de execuções</h2>
+<div id="historyBody"></div>
+<div class="actions"><button id="historyBack" hidden>Voltar</button><button id="historyClose">Fechar</button></div>
+</dialog>
 <dialog id="runDialog"><form id="runForm"><h2>Executar fluxo</h2>
 <label>Pasta do projeto<input id="project" placeholder="/caminho/do/projeto" required></label>
 <label>Tarefa<textarea id="task" required maxlength="12000"></textarea></label>
@@ -286,6 +290,50 @@ $('runForm').onsubmit=async e=>{
   } catch (error) {$('runError').textContent=error.message;}
   finally {$('startRun').disabled=false;}
 };
+const archiveLabels = {running:'Em execução',done:'Concluído',failed:'Com falhas',
+  interrupted:'Interrompido',unknown:'Status não registrado'};
+function archiveItem(tag,text,parent=$('historyBody')) {
+  const item=document.createElement(tag);
+  item.textContent=text;
+  parent.append(item);
+  return item;
+}
+async function openArchive(id) {
+  const body=$('historyBody');
+  body.replaceChildren();
+  $('historyBack').hidden=!id;
+  const loading=archiveItem('p','Carregando…');
+  try {
+    const result=await api(id ? '/api/history/'+encodeURIComponent(id) : '/api/history');
+    if (!loading.isConnected) return;
+    body.replaceChildren();
+    if (!id) {
+      if (!result.length) archiveItem('p','Nenhuma execução registrada.');
+      for (const entry of result) {
+        const date=new Date(entry.created*1000).toLocaleString('pt-BR');
+        const task=entry.task.length>110?entry.task.slice(0,110)+'…':entry.task;
+        archiveItem('button',date+' · '+archiveLabels[entry.status]+' · '+task)
+          .onclick=()=>openArchive(entry.id);
+      }
+      return;
+    }
+    archiveItem('strong',archiveLabels[result.status]);
+    archiveItem('small',result.project);
+    archiveItem('p',result.task);
+    for (const agent of result.agents) {
+      const details=archiveItem('details','');
+      archiveItem('summary',agent.name+' · '+(statusNames[agent.status]||'Status não registrado'),details);
+      archiveItem('strong','Log',details);
+      archiveItem('pre',agent.log||'Sem log registrado.',details);
+      archiveItem('strong','Resposta',details);
+      archiveItem('pre',agent.report||'Sem resposta registrada.',details);
+    }
+  } catch (error) {loading.textContent=error.message;}
+}
+$('history').hidden=!apiToken;
+$('history').onclick=()=>{$('historyDialog').showModal();openArchive();};
+$('historyBack').onclick=()=>openArchive();
+$('historyClose').onclick=()=>$('historyDialog').close();
 render();fit();
 if (apiToken) {refresh();setInterval(refresh,900);}
 </script>
